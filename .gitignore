@@ -1,0 +1,25 @@
+# Build artifacts
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Coverage
+coverage.txt
+/coverage/
+
+# Local secrets & environment — never commit
+.env
+.env.*
+*.local
+config.json
+.mailafrica/
+
+# Editor fluff
+.DS_Store
+.idea/
+.vscode/
+
+# Go
+vendor/

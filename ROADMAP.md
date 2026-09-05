@@ -1,0 +1,38 @@
+# MailAfrica CLI — Roadmap & Priorities
+
+Tracked separately from the phase plan so build sequencing never silently
+becomes priority ranking. **Sequencing is about dependencies, not value.**
+
+## Strategic priority (do not deprioritize)
+
+- **Agent commands (`agent config`, `agent draft`) are the product
+  differentiator** — the "Twilio-for-AI-agent-email" story is built on turning an
+  inbound address into an AI auto-responder. The CLI must ship these.
+- They are sequenced last (Phase 4) only because agent `reply_from` config needs
+  verified sending domains (Phase 3) working first.
+- If the project ever slows down mid-stream (across the other ~30 repos), the
+  Phase 4 agent piece must still land. It is **mandatory**, not optional polish.
+
+## Phase map
+
+| Phase | Scope | Status |
+|-------|-------|--------|
+| 1 | Foundation, config, API client + auth interceptor, auth + apikeys commands | pending |
+| 2 | Inbound (addresses/domains/messages) + webhooks | pending |
+| 3 | Sending domains + sender IDs, outbound send/batch, templates, sandbox | pending |
+| 4 | Billing, compliance, SMS — **and Agent (strategic)** | pending |
+| 5 | Publication polish, CI, README, git-history secrets audit | pending |
+
+## Standing design invariants (locked in review)
+
+1. **Single request path.** All auth flows through `internal/api` `Do()`; no
+   command layer handles 401s. One in-flight request per process is assumed; the
+   refresh path is still mutex-serialized so future concurrency can't rotate the
+   same refresh token twice.
+2. **`dns_records` parsed at the boundary** into a named `DNSRecords{DKIM, SPF,
+   DMARC}` struct — never indexed positionally. Unrecognized records are
+   surfaced (warn + expose), never silently dropped.
+3. **Batch recipient cap (50) validated client-side.** >50 rejected locally with
+   a clear error; `--auto-chunk` splits into ≤50 sequential calls with
+   stop-on-first-failure reporting (`sent X/Y across K chunks · chunk N failed ·
+   chunks N+1..K not attempted`), documented in Phase 3's definition of done.
