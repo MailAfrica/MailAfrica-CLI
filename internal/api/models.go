@@ -333,3 +333,126 @@ type SandboxMessage struct {
 	Attachments any       `json:"attachments"`
 	ReceivedAt  time.Time `json:"received_at"`
 }
+
+// BillingTopup is a wallet top-up request row created when a checkout session
+// or USSD push is initiated. Status is pending|completed|failed.
+type BillingTopup struct {
+	ID                int64     `json:"id"`
+	UserID            int64     `json:"user_id"`
+	AmountTZS         int64     `json:"amount_tzs"`
+	Status            string    `json:"status"`
+	ProviderReference *string   `json:"provider_reference,omitempty"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+// BillingTopupResponse carries a hosted-checkout top-up result. The payment
+// links are the only payment surface the API exposes to users.
+type BillingTopupResponse struct {
+	Topup             *BillingTopup `json:"topup"`
+	CheckoutURL       string        `json:"checkout_url,omitempty"`
+	PaymentLinkURL    string        `json:"payment_link_url,omitempty"`
+	ProviderReference string        `json:"provider_reference,omitempty"`
+}
+
+// ComplianceProfile captures a user's pseudonymisation/PDPC posture defaults.
+type ComplianceProfile struct {
+	ID                    int64      `json:"id"`
+	UserID                int64      `json:"user_id"`
+	PDPCRegistered        bool       `json:"pdpc_registered"`
+	PDPCCertificateNumber *string    `json:"pdpc_certificate_number,omitempty"`
+	PDPCRegisteredAt      *time.Time `json:"pdpc_registered_at,omitempty"`
+	DefaultRetentionDays  int        `json:"default_retention_days"`
+	DataConsentAt         *time.Time `json:"data_consent_at,omitempty"`
+	PrivacyPolicyVersion  string     `json:"privacy_policy_version,omitempty"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+}
+
+// ComplianceProfileUpdate is the partial PATCH body. nil fields are untouched.
+type ComplianceProfileUpdate struct {
+	PDPCRegistered        *bool   `json:"pdpc_registered,omitempty"`
+	PDPCCertificateNumber *string `json:"pdpc_certificate_number,omitempty"`
+	PDPCRegisteredAt      *string `json:"pdpc_registered_at,omitempty"`
+	DefaultRetentionDays  *int    `json:"default_retention_days,omitempty"`
+}
+
+// ComplianceAuditExport is a point-in-time data-handling snapshot for audits.
+type ComplianceAuditExport struct {
+	PDPCRegistered        bool      `json:"pdpc_registered"`
+	PDPCCertificateNumber string    `json:"pdpc_certificate_number,omitempty"`
+	DefaultRetentionDays  int       `json:"default_retention_days"`
+	AddressCount          int64     `json:"address_count"`
+	MessageCount          int64     `json:"message_count"`
+	GeneratedAt           time.Time `json:"generated_at"`
+}
+
+// SMSNotification is a phone number that gets a short SMS when mail arrives at
+// an inbound address. The SendAfrica API key is stored server-side encrypted
+// and is only returned in full at creation.
+type SMSNotification struct {
+	ID          int64     `json:"id"`
+	AddressID   int64     `json:"address_id"`
+	PhoneNumber string    `json:"phone_number"`
+	IsActive    bool      `json:"is_active"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+// SMSCreateRequest body for creating an SMS notification.
+type SMSCreateRequest struct {
+	AddressID   int64  `json:"address_id"`
+	PhoneNumber string `json:"phone_number"`
+	APIKey      string `json:"api_key"`
+}
+
+// SMSCreateResponse extends the notification with the plaintext provider key,
+// which the API returns exactly once.
+type SMSCreateResponse struct {
+	SMSNotification
+	APIKey string `json:"api_key"`
+}
+
+// SMSDelivery is one captured delivery attempt for an SMS notification.
+type SMSDelivery struct {
+	ID                int64     `json:"id"`
+	NotificationID    int64     `json:"sms_notification_id"`
+	MessageID         int64     `json:"message_id"`
+	Status            string    `json:"status"`
+	ErrorCode         *string   `json:"error_code,omitempty"`
+	ProviderMessageID *string   `json:"provider_message_id,omitempty"`
+	Attempt           int       `json:"attempt"`
+	CreatedAt         time.Time `json:"created_at"`
+}
+
+// AgentConfig is the auto-reply configuration for one inbound address. Mode is
+// off|draft|auto. The actual replies are produced and sent by the deployed
+// agent service, which reads this same config.
+type AgentConfig struct {
+	AddressID         int64     `json:"address_id"`
+	UserID            int64     `json:"user_id"`
+	Mode              string    `json:"mode"`
+	Persona           *string   `json:"persona,omitempty"`
+	Enabled           bool      `json:"enabled"`
+	ReplyFromDomainID *int64    `json:"reply_from_domain_id,omitempty"`
+	ReplyFromAddress  *string   `json:"reply_from_address,omitempty"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
+// AgentConfigUpdate is the upsert body. Only mode is required; everything else
+// is optional and only set when non-nil.
+type AgentConfigUpdate struct {
+	Mode              string  `json:"mode"`
+	Persona           *string `json:"persona,omitempty"`
+	Enabled           *bool   `json:"enabled,omitempty"`
+	ReplyFromDomainID *int64  `json:"reply_from_domain_id,omitempty"`
+	ReplyFromAddress  *string `json:"reply_from_address,omitempty"`
+}
+
+// AgentDraftRequest is the input for a one-off draft preview. Never sends.
+type AgentDraftRequest struct {
+	Subject  string `json:"subject,omitempty"`
+	TextBody string `json:"text_body,omitempty"`
+}
+
+// AgentDraftResponse is the generated preview text.
+type AgentDraftResponse struct {
+	Draft string `json:"draft"`
+}

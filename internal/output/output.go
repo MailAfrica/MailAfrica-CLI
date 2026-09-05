@@ -44,6 +44,14 @@ func Empty(s string) string {
 	return s
 }
 
+// EmptyPtr is Empty for a *string; nil renders as "-".
+func EmptyPtr(p *string) string {
+	if p == nil {
+		return "-"
+	}
+	return Empty(*p)
+}
+
 // SecretShort renders a redacted preview of a secret, e.g. MAIL_ab12… — used
 // where showing only an identifying prefix is safe.
 func SecretShort(s string) string {

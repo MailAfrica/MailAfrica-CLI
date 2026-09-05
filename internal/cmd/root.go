@@ -83,6 +83,10 @@ configuration for the current process.`,
 		newSendCmd(),
 		newDomainCmd(),
 		newSandboxCmd(),
+		newWalletCmd(),
+		newComplianceCmd(),
+		newSMSCmd(),
+		newAgentCmd(),
 	)
 	return root
 }
