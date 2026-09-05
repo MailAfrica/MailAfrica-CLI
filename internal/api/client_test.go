@@ -264,6 +264,7 @@ func TestDo_UsesAPIKeyHeader(t *testing.T) {
 }
 
 // TestDo_SurfacesTypedAPIError checks error-code mapping for non-2xx responses.
+// TestDo_SurfacesTypedAPIError verifies a 4xx envelope maps to a typed error.
 func TestDo_SurfacesTypedAPIError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body := []byte(`{"success":false,"errors":[{"code":"VALIDATION_ERROR","message":"bad local_part"}],"request_id":"req-1"}`)
@@ -285,6 +286,58 @@ func TestDo_SurfacesTypedAPIError(t *testing.T) {
 	}
 	if ae.Code != "VALIDATION_ERROR" || ae.Message != "bad local_part" || ae.Status != 400 {
 		t.Fatalf("unexpected APIError: %+v", ae)
+	}
+}
+
+// TestDo_Surfaces200FailureEnvelope verifies the inbound-domain-verify path:
+// HTTP 200 with success:false and code PENDING must surface as a typed APIError,
+// not a silent nil-payload success.
+func TestDo_Surfaces200FailureEnvelope(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := []byte(`{"success":false,"errors":[{"code":"PENDING","message":"dkim txt record not found"}]}`)
+		writeJSON(w, http.StatusOK, body)
+	}))
+	defer srv.Close()
+
+	cfg := newTestConfig(t)
+	_ = cfg.SetAPIKey("MAIL_k")
+	cl := New(srv.URL, cfg, nil)
+	var out InboundDomain
+	err := cl.Do(context.Background(), http.MethodPost, "/api/inbound/domains/1/verify", nil, &out)
+	if err == nil {
+		t.Fatal("expected error for success=false envelope")
+	}
+	ae, ok := err.(*APIError)
+	if !ok {
+		t.Fatalf("err type = %T, want *APIError", err)
+	}
+	if ae.Code != "PENDING" || ae.Status != 200 {
+		t.Fatalf("unexpected APIError: %+v", ae)
+	}
+}
+
+// TestDo_DoRawExposesPagination verifies the paginated message list path returns
+// the envelope so commands can render page metadata.
+func TestDo_DoRawExposesPagination(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := []byte(`{"success":true,"data":[{"id":1,"address_id":7,"from":"a","to":"b","subject":"hi","is_read":false,"created_at":"2026-01-01T00:00:00Z"}],"pagination":{"page":2,"per_page":1,"total":3,"total_pages":3}}`)
+		writeJSON(w, http.StatusOK, body)
+	}))
+	defer srv.Close()
+
+	cfg := newTestConfig(t)
+	_ = cfg.SetAPIKey("MAIL_k")
+	cl := New(srv.URL, cfg, nil)
+	var msgs []*InboundMessage
+	env, err := cl.DoRaw(context.Background(), http.MethodGet, "/api/inbound/messages", nil, &msgs)
+	if err != nil {
+		t.Fatalf("DoRaw error = %v", err)
+	}
+	if len(msgs) != 1 {
+		t.Fatalf("got %d messages, want 1", len(msgs))
+	}
+	if env.Pagination == nil || env.Pagination.Page != 2 || env.Pagination.TotalPages != 3 {
+		t.Fatalf("unexpected pagination: %+v", env.Pagination)
 	}
 }
 

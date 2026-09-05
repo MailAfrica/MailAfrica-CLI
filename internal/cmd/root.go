@@ -48,8 +48,13 @@ permissions. Set MAILAFRICA_API_URL and MAILAFRICA_API_KEY to override
 configuration for the current process.`,
 		SilenceUsage:  true,
 		SilenceErrors: true,
-		Args:          cobra.ArbitraryArgs,
-		Version:       version.Version,
+		Args:          cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Bare `mailafrica` prints help; any stray argument is an unknown
+			// subcommand, which NoArgs rejects with a non-zero exit.
+			return cmd.Help()
+		},
+		Version: version.Version,
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := buildEnv(cmd)
 			if err != nil {
@@ -73,6 +78,8 @@ configuration for the current process.`,
 		newConfigCmd(),
 		newAuthCmd(),
 		newAPIKeysCmd(),
+		newInboundCmd(),
+		newWebhookCmd(),
 	)
 	return root
 }

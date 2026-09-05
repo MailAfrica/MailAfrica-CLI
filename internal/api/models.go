@@ -70,3 +70,99 @@ type DNSRecords struct {
 	// Unrecognized carries any record that did not map to the three known types.
 	Unrecognized []UnknownRecord
 }
+
+// InboundAddress is a receiving address mailbox (inbound_addresses rows).
+type InboundAddress struct {
+	ID            int64     `json:"id"`
+	UserID        int64     `json:"user_id"`
+	LocalPart     string    `json:"local_part"`
+	Label         *string   `json:"label"`
+	DomainID      *int64    `json:"domain_id"`
+	RetentionDays int       `json:"retention_days"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+// CreateInboundAddressRequest is the body of POST /api/inbound/addresses.
+type CreateInboundAddressRequest struct {
+	LocalPart string  `json:"local_part"`
+	Label     *string `json:"label,omitempty"`
+	DomainID  *int64  `json:"domain_id,omitempty"`
+}
+
+// InboundDomain is a custom inbound domain (TXT verify token + DNS check).
+type InboundDomain struct {
+	ID                int64      `json:"id"`
+	UserID            int64      `json:"user_id"`
+	Domain            string     `json:"domain"`
+	VerificationToken string     `json:"verification_token,omitempty"`
+	VerifiedAt        *time.Time `json:"verified_at"`
+	LastCheckAt       *time.Time `json:"last_check_at"`
+	CreatedAt         time.Time  `json:"created_at"`
+}
+
+// CreateInboundDomainRequest is the body of POST /api/inbound/domains.
+type CreateInboundDomainRequest struct {
+	Domain string `json:"domain"`
+}
+
+// VerificationRecord is a DNS record to publish when setting up an inbound
+// domain (or sending domain in later phases).
+type VerificationRecord struct {
+	Type  string `json:"type"`
+	Host  string `json:"host"`
+	Value string `json:"value"`
+}
+
+// CreateInboundDomainResponse is the data of POST /api/inbound/domains: the
+// domain plus the exact DNS records the operator must publish.
+type CreateInboundDomainResponse struct {
+	Domain              InboundDomain        `json:"domain"`
+	VerificationRecord  VerificationRecord   `json:"verification_record"`
+	VerificationRecords []VerificationRecord `json:"verification_records"`
+}
+
+// InboundMessage is a received email at an inbound address.
+type InboundMessage struct {
+	ID        int64     `json:"id"`
+	AddressID int64     `json:"address_id"`
+	From      string    `json:"from"`
+	To        string    `json:"to"`
+	Subject   string    `json:"subject"`
+	TextBody  string    `json:"text_body"`
+	HTMLBody  string    `json:"html_body"`
+	IsRead    bool      `json:"is_read"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Webhook is a receive callback wired to an inbound address. Secret signs the
+// delivery notification (X-Signature header) and is shown once at creation.
+type Webhook struct {
+	ID        int64     `json:"id"`
+	AddressID int64     `json:"address_id"`
+	URL       string    `json:"url"`
+	Secret    string    `json:"secret"`
+	IsActive  bool      `json:"is_active"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// CreateWebhookRequest is the body of POST /api/webhook/webhooks.
+// Secret may be left empty — the server generates one.
+type CreateWebhookRequest struct {
+	AddressID int64  `json:"address_id"`
+	URL       string `json:"url"`
+	Secret    string `json:"secret,omitempty"`
+}
+
+// WebhookDelivery is one attempt to POST a mail delivery notification.
+type WebhookDelivery struct {
+	ID          int64      `json:"id"`
+	WebhookID   int64      `json:"webhook_id"`
+	MessageID   int64      `json:"message_id"`
+	StatusCode  int        `json:"status_code"`
+	Attempt     int        `json:"attempt"`
+	DeliveredAt *time.Time `json:"delivered_at"`
+	Status      string     `json:"status"`
+	NextRetryAt *time.Time `json:"next_retry_at"`
+	LastError   string     `json:"last_error"`
+	CreatedAt   time.Time  `json:"created_at"`
+}

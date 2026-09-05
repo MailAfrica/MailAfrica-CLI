@@ -76,17 +76,25 @@ func (c *Client) SetAPIKey(k string) {
 // It transparently handles a 401 by refreshing the stored refresh token and
 // retrying exactly once before giving up.
 func (c *Client) Do(ctx context.Context, method, path string, body any, out any) error {
+	_, err := c.do(ctx, method, path, body, out, true, true)
+	return err
+}
+
+// DoRaw is Do but also returns the full envelope, exposing pagination metadata
+// for list endpoints.
+func (c *Client) DoRaw(ctx context.Context, method, path string, body any, out any) (*Envelope, error) {
 	return c.do(ctx, method, path, body, out, true, true)
 }
 
 // DoPublic issues an unauthenticated request (login, refresh, email-verify).
 func (c *Client) DoPublic(ctx context.Context, method, path string, body any, out any) error {
-	return c.do(ctx, method, path, body, out, false, false)
+	_, err := c.do(ctx, method, path, body, out, false, false)
+	return err
 }
 
-func (c *Client) do(ctx context.Context, method, path string, body any, out any, authed, canRefresh bool) error {
+func (c *Client) do(ctx context.Context, method, path string, body any, out any, authed, canRefresh bool) (*Envelope, error) {
 	if authed && !c.hasCredentials() {
-		return ErrNotAuthenticated
+		return nil, ErrNotAuthenticated
 	}
 
 	attempts := 0
@@ -98,7 +106,7 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any,
 		gen := int(c.refreshGeneration.Load())
 		env, status, err := c.roundTrip(ctx, method, path, body, authed)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if status == http.StatusUnauthorized && authed && canRefresh && attempts == 0 && !c.hasAPIKey() {
@@ -106,24 +114,30 @@ func (c *Client) do(ctx context.Context, method, path string, body any, out any,
 			if !willRefresh {
 				// We have credentials but nothing refreshable (bare JWT). Don't
 				// clear anything; surface the 401 as-is.
-				return apiErrorFrom(env, status)
+				return nil, apiErrorFrom(env, status)
 			}
 			if err := c.refreshIfNeeded(ctx, gen); err != nil {
-				return err
+				return nil, err
 			}
 			attempts++
 			continue
 		}
 
 		if status >= http.StatusBadRequest {
-			return apiErrorFrom(env, status)
+			return nil, apiErrorFrom(env, status)
+		}
+		// Some endpoints (e.g. inbound domain verify) return HTTP 200 with a
+		// failure envelope (code "PENDING") when work still needs doing — treat
+		// those as errors too rather than a nil-payload success.
+		if !env.Success {
+			return nil, apiErrorFrom(env, status)
 		}
 		if out != nil && len(bytes.TrimSpace(env.Data)) > 0 && !bytes.Equal(bytes.TrimSpace(env.Data), []byte("null")) {
 			if err := json.Unmarshal(env.Data, out); err != nil {
-				return fmt.Errorf("parse response for %s: %w", path, err)
+				return nil, fmt.Errorf("parse response for %s: %w", path, err)
 			}
 		}
-		return nil
+		return env, nil
 	}
 }
 
