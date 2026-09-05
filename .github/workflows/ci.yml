@@ -1,0 +1,38 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Format check
+        run: test -z "$(gofmt -l .)" || (gofmt -l . && exit 1)
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test (race)
+        run: go test -race -count=1 ./...
+
+      - name: History secrets scan
+        run: |
+          set -euo pipefail
+          scan() { git grep -nIE "$1" "$2" -- || true; }
+          # never allow a real credential shape anywhere; test fixtures use *testkey*
+          out=$(scan 'MAIL_[0-9a-f]{56,}|BEGIN (RSA|OPENSSH|EC|DSA) PRIVATE KEY|AKIA[0-9A-Z]{16}|SDK_[A-Za-z0-9]{16,}|whsec_[0-9a-f]{24,}' $(git rev-list --all))
+          echo "$out"
+          test -z "$out"

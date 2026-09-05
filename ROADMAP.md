@@ -17,11 +17,11 @@ becomes priority ranking. **Sequencing is about dependencies, not value.**
 
 | Phase | Scope | Status |
 |-------|-------|--------|
-| 1 | Foundation, config, API client + auth interceptor, auth + apikeys commands | pending |
-| 2 | Inbound (addresses/domains/messages) + webhooks | pending |
-| 3 | Sending domains + sender IDs, outbound send/batch, templates, sandbox | pending |
-| 4 | Billing, compliance, SMS — **and Agent (strategic)** | pending |
-| 5 | Publication polish, CI, README, git-history secrets audit | pending |
+| 1 | Foundation, config, API client + auth interceptor, auth + apikeys commands | shipped |
+| 2 | Inbound (addresses/domains/messages) + webhooks | shipped |
+| 3 | Sending domains + sender IDs, outbound send/batch, templates, sandbox | shipped |
+| 4 | Wallet billing, compliance, SMS — **and Agent (strategic)** | shipped |
+| 5 | Publication polish, CI, README, git-history secrets audit | shipped |
 
 ## Standing design invariants (locked in review)
 
