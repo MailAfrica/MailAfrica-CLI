@@ -80,6 +80,9 @@ configuration for the current process.`,
 		newAPIKeysCmd(),
 		newInboundCmd(),
 		newWebhookCmd(),
+		newSendCmd(),
+		newDomainCmd(),
+		newSandboxCmd(),
 	)
 	return root
 }
