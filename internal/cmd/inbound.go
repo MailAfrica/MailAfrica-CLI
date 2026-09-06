@@ -347,7 +347,7 @@ func newInboundMessageListCmd() *cobra.Command {
 					output.Empty(m.From),
 					output.Empty(m.Subject),
 					output.Bool(m.IsRead),
-					fmtTime(m.CreatedAt),
+					fmtTime(m.ReceivedAt),
 				})
 			}
 			output.Table(cmd.OutOrStdout(), []string{"ID", "From", "Subject", "Read", "Received"}, rows)
@@ -386,10 +386,10 @@ func newInboundMessageGetCmd() *cobra.Command {
 			fmt.Fprintf(cmd.OutOrStdout(), "From    : %s\n", output.Empty(m.From))
 			fmt.Fprintf(cmd.OutOrStdout(), "To      : %s\n", output.Empty(m.To))
 			fmt.Fprintf(cmd.OutOrStdout(), "Subject : %s\n", output.Empty(m.Subject))
-			fmt.Fprintf(cmd.OutOrStdout(), "Received: %s\n", fmtTime(m.CreatedAt))
+			fmt.Fprintf(cmd.OutOrStdout(), "Received: %s\n", fmtTime(m.ReceivedAt))
 			fmt.Fprintf(cmd.OutOrStdout(), "Read    : %s\n", output.Bool(m.IsRead))
 			fmt.Fprintln(cmd.OutOrStdout(), "")
-			fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(m.TextBody))
+			fmt.Fprintln(cmd.OutOrStdout(), strings.TrimSpace(output.EmptyPtr(m.TextBody)))
 			return nil
 		},
 	}

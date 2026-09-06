@@ -85,8 +85,8 @@ func newInboundTestServer(t *testing.T) (*httptest.Server, *bool) {
 
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/inbound/messages/") && len(parts) == 3:
 			msgs := []map[string]any{
-				{"id": 11, "address_id": 7, "from": "alice@corp.com", "to": "invoices@mailafrica.online", "subject": "Invoice", "is_read": false, "created_at": "2026-01-02T00:00:00Z"},
-				{"id": 10, "address_id": 7, "from": "bob@corp.com", "to": "invoices@mailafrica.online", "subject": "Receipt", "is_read": true, "created_at": "2026-01-01T00:00:00Z"},
+				{"id": 11, "address_id": 7, "from_addr": "alice@corp.com", "to_addr": "invoices@mailafrica.online", "subject": "Invoice", "is_read": false, "received_at": "2026-01-02T00:00:00Z"},
+				{"id": 10, "address_id": 7, "from_addr": "bob@corp.com", "to_addr": "invoices@mailafrica.online", "subject": "Receipt", "is_read": true, "received_at": "2026-01-01T00:00:00Z"},
 			}
 			writeEnv(w, http.StatusOK, true, msgs, &map[string]int{"page": 1, "per_page": 2, "total": 2, "total_pages": 1})
 
@@ -98,8 +98,8 @@ func newInboundTestServer(t *testing.T) (*httptest.Server, *bool) {
 
 		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/inbound/messages/"):
 			writeEnv(w, http.StatusOK, true, map[string]any{
-				"id": 11, "address_id": 7, "from": "alice@corp.com", "to": "invoices@mailafrica.online",
-				"subject": "Invoice", "text_body": "Dear customer, you owe us.", "is_read": false, "created_at": "2026-01-02T00:00:00Z",
+				"id": 11, "address_id": 7, "from_addr": "alice@corp.com", "to_addr": "invoices@mailafrica.online",
+				"subject": "Invoice", "text_body": "Dear customer, you owe us.", "is_read": false, "received_at": "2026-01-02T00:00:00Z",
 			}, nil)
 
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/webhook/webhooks/") && len(parts) == 3:

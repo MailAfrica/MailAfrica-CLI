@@ -49,6 +49,38 @@ func newOutboundTestServer(t *testing.T) (*httptest.Server, *atomic.Int32) {
 
 		path := r.URL.Path
 		// ── outbound email ──────────────────────────────────────────────────
+		if r.Method == http.MethodPost && path == "/api/outbound/emails/batch" {
+			var req api.BatchSendRequest
+			_ = json.NewDecoder(r.Body).Decode(&req)
+			n := len(req.To)
+			// Simulate the server's batch behavior. failureAttemptWhen==1 →
+			// all recipients fail; ==2 → half fail (partial). Otherwise all sent.
+			// The real server continues past failed recipients, so failure is
+			// reported in the summary rather than aborting the call.
+			sent, failed := n, 0
+			switch failureAttemptWhen.Load() {
+			case 1:
+				sent, failed = 0, n
+			case 2:
+				sent = n / 2
+				failed = n - sent
+			}
+			messages := []map[string]any{}
+			if sent > 0 {
+				msgSeq++
+				messages = append(messages, map[string]any{
+					"id": msgSeq, "user_id": 1, "from_address": "noreply@test",
+					"to_addresses": req.To, "subject": req.Subject,
+					"status": "sent", "amount_tzs": 5 * sent,
+					"provider_message_id": fmt.Sprintf("mta-%d", msgSeq),
+					"created_at":          "2026-01-02T00:00:00Z",
+				})
+			}
+			writeEnv(w, http.StatusOK, true, map[string]any{
+				"total": n, "sent": sent, "failed": failed, "messages": messages,
+			})
+			return
+		}
 		if r.Method == http.MethodPost && path == "/api/outbound/emails" {
 			n := msgSeq + 1
 			msgSeq = n
@@ -231,7 +263,7 @@ func TestCLI_SendEmailRejectsOverLimitWithoutAutoChunk(t *testing.T) {
 	if err == nil {
 		t.Fatal("send with 51 recipients must fail without --auto-chunk")
 	}
-	if !strings.Contains(err.Error(), "auto-chunk") {
+	if !strings.Contains(err.Error(), "send batch") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -240,21 +272,18 @@ func TestCLI_SendBatchContract_PartialFailure(t *testing.T) {
 	mustOutboundEnv(t)
 	srv, failureAt := newOutboundTestServer(t)
 	defer srv.Close()
-	failureAt.Store(2) // second single-send call fails → chunk 2
+	failureAt.Store(2) // half the recipients fail (partial)
 
-	// 120 recipients → 3 chunks of 50,50,20; chunk 2 fails.
 	addrs := make([]string, 120)
 	for i := range addrs {
 		addrs[i] = fmt.Sprintf("r%d@test.com", i)
 	}
-	_, err := runCLI("send", "batch", "--to", strings.Join(addrs, ","), "--subject", "bulk", "--text-body", "x", "--auto-chunk", "--api-url", srv.URL)
+	_, err := runCLI("send", "batch", "--to", strings.Join(addrs, ","), "--subject", "bulk", "--text-body", "x", "--api-url", srv.URL)
 	if err == nil {
-		t.Fatal("partial failure must exit non-zero")
+		t.Fatal("batch with failed recipients must exit non-zero")
 	}
-	// The runner captures stderr, but the formatted message goes to cmd stdout
-	// which runCLI returns; check the error message.
-	if !strings.Contains(err.Error(), "failed chunk") {
-		t.Fatalf("error should mention failed chunk, got: %v", err)
+	if !strings.Contains(err.Error(), "failures") {
+		t.Fatalf("error should mention completed-with-failures, got: %v", err)
 	}
 }
 
@@ -268,13 +297,15 @@ func TestCLI_SendBatchContract_RenderedMessage(t *testing.T) {
 	for i := range addrs {
 		addrs[i] = fmt.Sprintf("r%d@test.com", i)
 	}
-	out, err := runCLI("send", "batch", "--to", strings.Join(addrs, ","), "--subject", "bulk", "--text-body", "x", "--auto-chunk", "--api-url", srv.URL)
+	out, err := runCLI("send", "batch", "--to", strings.Join(addrs, ","), "--subject", "bulk", "--text-body", "x", "--api-url", srv.URL)
 	if err == nil {
 		t.Fatal("partial failure must exit non-zero")
 	}
 	msg := out + err.Error()
-	if !strings.Contains(msg, "sent 50/120 across 3 chunks") || !strings.Contains(msg, "chunk 2 failed") || !strings.Contains(msg, "chunks 3..3 not attempted") {
-		t.Fatalf("contract message mismatch: %q", msg)
+	// The server continues past failed recipients, so the report is a rolled-up
+	// sent/failed summary rather than an explicit chunk.
+	if !strings.Contains(msg, "sent 60/120") || !strings.Contains(msg, "failed 60") || !strings.Contains(msg, "continued") {
+		t.Fatalf("partial-failure message mismatch: %q", msg)
 	}
 }
 
@@ -288,37 +319,31 @@ func TestCLI_SendBatchContract_AllFail(t *testing.T) {
 	for i := range addrs {
 		addrs[i] = fmt.Sprintf("r%d@test.com", i)
 	}
-	out, err := runCLI("send", "batch", "--to", strings.Join(addrs, ","), "--subject", "fail", "--text-body", "x", "--auto-chunk", "--api-url", srv.URL)
+	out, err := runCLI("send", "batch", "--to", strings.Join(addrs, ","), "--subject", "fail", "--text-body", "x", "--api-url", srv.URL)
 	if err == nil {
-		t.Fatal("first chunk failure must exit non-zero")
+		t.Fatal("all-failed batch must exit non-zero")
 	}
 	msg := out + err.Error()
-	if !strings.Contains(msg, "sent 0/10 across 1 chunks") || !strings.Contains(msg, "chunk 1 failed") {
-		t.Fatalf("first chunk failure message: %q", msg)
+	if !strings.Contains(msg, "failed 10/10") || !strings.Contains(msg, "no recipients were sent") {
+		t.Fatalf("all-failed message: %q", msg)
 	}
 }
 
-func TestCLI_SendBatchContract_LastChunkFail(t *testing.T) {
+func TestCLI_SendBatchSuccess(t *testing.T) {
 	mustOutboundEnv(t)
-	srv, failureAt := newOutboundTestServer(t)
+	srv, _ := newOutboundTestServer(t)
 	defer srv.Close()
-	// 70 recipients → chunks 50/20; chunk 2 fails → "chunks 3..2" should NOT appear
-	failureAt.Store(2)
 
-	addrs := make([]string, 70)
-	for i := range addrs {
-		addrs[i] = fmt.Sprintf("r%d@test.com", i)
+	var addrs []string
+	for i := 0; i < 51; i++ {
+		addrs = append(addrs, fmt.Sprintf("r%d@test.com", i))
 	}
-	out, err := runCLI("send", "batch", "--to", strings.Join(addrs, ","), "--subject", "fail", "--text-body", "x", "--auto-chunk", "--api-url", srv.URL)
-	if err == nil {
-		t.Fatal("last chunk failure must exit non-zero")
+	out, err := runCLI("send", "batch", "--to", strings.Join(addrs, ","), "--subject", "bulk", "--text-body", "x", "--api-url", srv.URL)
+	if err != nil {
+		t.Fatalf("batch send error = %v\n%s", err, out)
 	}
-	msg := out + err.Error()
-	if strings.Contains(msg, "not attempted") {
-		t.Fatalf("no 'chunks not attempted' suffix when last chunk fails: %q", msg)
-	}
-	if !strings.Contains(msg, "sent 50/70 across 2 chunks") || !strings.Contains(msg, "chunk 2 failed") {
-		t.Fatalf("last chunk failure message: %q", msg)
+	if !strings.Contains(out, "sent 51/51") {
+		t.Fatalf("batch success output: %s", out)
 	}
 }
 

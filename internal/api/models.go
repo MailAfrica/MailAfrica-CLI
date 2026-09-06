@@ -123,15 +123,15 @@ type CreateInboundDomainResponse struct {
 
 // InboundMessage is a received email at an inbound address.
 type InboundMessage struct {
-	ID        int64     `json:"id"`
-	AddressID int64     `json:"address_id"`
-	From      string    `json:"from"`
-	To        string    `json:"to"`
-	Subject   string    `json:"subject"`
-	TextBody  string    `json:"text_body"`
-	HTMLBody  string    `json:"html_body"`
-	IsRead    bool      `json:"is_read"`
-	CreatedAt time.Time `json:"created_at"`
+	ID         int64     `json:"id"`
+	AddressID  int64     `json:"address_id"`
+	From       string    `json:"from_addr"`
+	To         string    `json:"to_addr"`
+	Subject    string    `json:"subject"`
+	TextBody   *string   `json:"text_body,omitempty"`
+	HTMLBody   *string   `json:"html_body,omitempty"`
+	IsRead     bool      `json:"is_read"`
+	ReceivedAt time.Time `json:"received_at"`
 }
 
 // Webhook is a receive callback wired to an inbound address. Secret signs the
@@ -210,6 +210,30 @@ type OutboundSendRequest struct {
 	FromAddress  *string           `json:"from_address,omitempty"`
 }
 
+// BatchSendRequest is the POST /api/outbound/emails/batch body — the same
+// shape as a send but with a flat recipient list (no cc/bcc). The server
+// splits recipients into ≤50-recipient chunks, filters suppressed addresses,
+// and reports a per-chunk summary.
+type BatchSendRequest struct {
+	To           []string          `json:"to"`
+	Subject      string            `json:"subject"`
+	HTMLBody     string            `json:"html_body,omitempty"`
+	TextBody     string            `json:"text_body,omitempty"`
+	Attachments  []Attachment      `json:"attachments,omitempty"`
+	TemplateID   *int64            `json:"template_id,omitempty"`
+	Variables    map[string]string `json:"variables,omitempty"`
+	FromDomainID *int64            `json:"from_domain_id,omitempty"`
+	FromAddress  *string           `json:"from_address,omitempty"`
+}
+
+// BatchResult summarizes a server-side batch send.
+type BatchResult struct {
+	Total    int               `json:"total"`
+	Sent     int               `json:"sent"`
+	Failed   int               `json:"failed"`
+	Messages []OutboundMessage `json:"messages"`
+}
+
 // RecipientStatus is the per-recipient delivery state of an outbound message.
 type RecipientStatus struct {
 	ID           int64     `json:"id"`
@@ -261,6 +285,10 @@ type SendingDomain struct {
 	FromLocalPart     string     `json:"from_local_part"`
 	DkimHost          *string    `json:"dkim_host,omitempty"`
 	DkimValue         *string    `json:"dkim_value,omitempty"`
+	SpfHost           *string    `json:"spf_host,omitempty"`
+	SpfValue          *string    `json:"spf_value,omitempty"`
+	DmarcHost         *string    `json:"dmarc_host,omitempty"`
+	DmarcValue        *string    `json:"dmarc_value,omitempty"`
 	VerifiedAt        *time.Time `json:"verified_at,omitempty"`
 	LastCheckAt       *time.Time `json:"last_check_at,omitempty"`
 	CreatedAt         time.Time  `json:"created_at"`

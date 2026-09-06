@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -16,14 +15,9 @@ import (
 )
 
 // maxRecipientsPerCall is the client-side recipient cap for one API call.
-// Anything larger must go through `send batch --auto-chunk`, which splits the
-// list into sequential ≤ maxRecipientsPerCall sends and stops on the first
-// failure.
+// The server-side batch endpoint splits larger lists into sequential
+// ≤ maxRecipientsPerCall sends itself.
 const maxRecipientsPerCall = 50
-
-// chunkPause is the pacing between chunked sends. The API rate-limits sends at
-// 2/s per user; back-to-back chunks would hit HTTP 429.
-const chunkPause = 500 * time.Millisecond
 
 func newSendCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -59,7 +53,7 @@ func newSendEmailCmd() *cobra.Command {
 				return errors.New("--to is required (comma-separated or repeated)")
 			}
 			if len(req.To) > maxRecipientsPerCall {
-				return fmt.Errorf("%d recipients exceeds the %d-per-call limit — use `mailafrica send batch --to <same list> --auto-chunk`", len(req.To), maxRecipientsPerCall)
+				return fmt.Errorf("%d recipients exceeds the %d-per-call limit — use `mailafrica send batch --to <same list>`", len(req.To), maxRecipientsPerCall)
 			}
 
 			var msg api.OutboundMessage
@@ -94,99 +88,54 @@ func newSendBatchCmd() *cobra.Command {
 			if len(req.To) == 0 {
 				return errors.New("--to is required (comma-separated, repeated, or --to-file)")
 			}
-			autoChunk, _ := cmd.Flags().GetBool("auto-chunk")
-			if len(req.To) > maxRecipientsPerCall && !autoChunk {
-				return fmt.Errorf("%d recipients exceeds the %d-per-call limit — pass --auto-chunk to split into sequential sends (stop on first failure)", len(req.To), maxRecipientsPerCall)
-			}
 
-			out := &batchOutcome{total: len(req.To), cap: maxRecipientsPerCall}
-			if !autoChunk {
-				var msg api.OutboundMessage
-				if err := e.client.Do(cmd.Context(), "POST", "/api/outbound/emails", req, &msg); err != nil {
-					return err
-				}
-				out.sent = len(req.To)
-				out.messageIDs = append(out.messageIDs, msg.ID)
-				out.finish(cmd)
-				return nil
+			// The server splits recipients into sequential ≤50 sends, filters
+			// suppressed addresses, and continues on failure (reporting a
+			// per-chunk summary) rather than stopping on the first error.
+			batch := api.BatchSendRequest{
+				To:           req.To,
+				Subject:      req.Subject,
+				HTMLBody:     req.HTMLBody,
+				TextBody:     req.TextBody,
+				Attachments:  req.Attachments,
+				TemplateID:   req.TemplateID,
+				Variables:    req.Variables,
+				FromDomainID: req.FromDomainID,
+				FromAddress:  req.FromAddress,
 			}
-
-			// Chunked path: sequential single sends, stop on the first failure.
-			base := *req
-			for i := 0; i < out.chunks(); i++ {
-				start, end := out.chunkBounds(i)
-				chunk := base
-				chunk.To = req.To[start:end]
-				var msg api.OutboundMessage
-				if err := e.client.Do(cmd.Context(), "POST", "/api/outbound/emails", chunk, &msg); err != nil {
-					out.failedChunk = i + 1
-					out.finish(cmd)
-					return errors.New("batch stopped after a failed chunk")
-				}
-				out.sent += len(chunk.To)
-				out.messageIDs = append(out.messageIDs, msg.ID)
-				if i < out.chunks()-1 {
-					time.Sleep(chunkPause)
-				}
+			var res api.BatchResult
+			if err := e.client.Do(cmd.Context(), "POST", "/api/outbound/emails/batch", batch, &res); err != nil {
+				return err
 			}
-			out.finish(cmd)
+			if e.jsonOut {
+				return output.JSON(cmd.OutOrStdout(), res)
+			}
+			switch {
+			case res.Failed == 0:
+				fmt.Fprintf(cmd.OutOrStdout(), "sent %d/%d", res.Sent, res.Total)
+				if len(res.Messages) == 1 {
+					fmt.Fprintf(cmd.OutOrStdout(), " · message %d", res.Messages[0].ID)
+				} else if len(res.Messages) > 1 {
+					ids := make([]string, 0, len(res.Messages))
+					for _, m := range res.Messages {
+						ids = append(ids, strconv.FormatInt(m.ID, 10))
+					}
+					fmt.Fprintf(cmd.OutOrStdout(), " · messages %s", strings.Join(ids, ","))
+				}
+				fmt.Fprintln(cmd.OutOrStdout())
+			case res.Sent == 0:
+				fmt.Fprintf(cmd.OutOrStdout(), "failed %d/%d — no recipients were sent\n", res.Failed, res.Total)
+			default:
+				fmt.Fprintf(cmd.OutOrStdout(), "sent %d/%d · failed %d — the server continued past failed recipients\n", res.Sent, res.Total, res.Failed)
+			}
+			if res.Failed > 0 {
+				return errors.New("batch send completed with failures")
+			}
 			return nil
 		},
 	}
 	addSendFlags(cmd)
-	cmd.Flags().Bool("auto-chunk", false, "split >50 recipients into sequential ≤50 sends, stopping on the first failure")
 	return cmd
-}
-
-// batchOutcome computes and renders the batch result. The contracted human
-// message on partial failure is explicit about exactly which chunk failed and
-// that later chunks were never attempted — a rolled-up "X of Y" summary is not
-// acceptable.
-type batchOutcome struct {
-	total       int
-	cap         int
-	sent        int
-	failedChunk int
-	messageIDs  []int64
-}
-
-func (b *batchOutcome) chunks() int {
-	return (b.total + b.cap - 1) / b.cap
-}
-
-func (b *batchOutcome) chunkBounds(i int) (int, int) {
-	start := i * b.cap
-	end := start + b.cap
-	if end > b.total {
-		end = b.total
-	}
-	return start, end
-}
-
-// finish prints the outcome summary to the command's stdout. Chunk failures
-// always render the explicit chunk report — never a rolled-up "X/Y" summary.
-func (b *batchOutcome) finish(cmd *cobra.Command) {
-	k := b.chunks()
-	switch {
-	case b.failedChunk != 0:
-		fmt.Fprintf(cmd.OutOrStdout(), "sent %d/%d across %d chunks · chunk %d failed", b.sent, b.total, k, b.failedChunk)
-		if b.failedChunk < k {
-			fmt.Fprintf(cmd.OutOrStdout(), " · chunks %d..%d not attempted", b.failedChunk+1, k)
-		}
-		fmt.Fprintln(cmd.OutOrStdout())
-	case len(b.messageIDs) == 1:
-		fmt.Fprintf(cmd.OutOrStdout(), "sent %d/%d · message %d\n", b.sent, b.total, b.messageIDs[0])
-	default:
-		fmt.Fprintf(cmd.OutOrStdout(), "sent %d/%d across %d chunks · message ids %s\n", b.sent, b.total, k, idsCSV(b.messageIDs))
-	}
-}
-
-func idsCSV(ids []int64) string {
-	parts := make([]string, 0, len(ids))
-	for _, id := range ids {
-		parts = append(parts, strconv.FormatInt(id, 10))
-	}
-	return strings.Join(parts, ",")
 }
 
 // buildSendRequest assembles the API body from send flags: recipient lists,
@@ -314,6 +263,6 @@ func addSendFlags(cmd *cobra.Command) {
 	cmd.Flags().String("template-id", "", "send using a saved template (inline bodies override it)")
 	cmd.Flags().StringSlice("var", nil, "template variable as key=value (repeatable)")
 	cmd.Flags().String("from-domain-id", "", "send from a verified sending domain (default: platform sender)")
-	cmd.Flags().String("from-address", "", "From override (must be an identity you control)")
+	cmd.Flags().String("from-address", "", "From override: with --from-domain-id it must be an identity on that domain; without, a local part on the platform domain (e.g. food@mailafrica.online)")
 	cmd.Flags().StringSlice("attach", nil, "file to attach (repeatable; base64-embedded)")
 }

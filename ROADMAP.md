@@ -32,7 +32,14 @@ becomes priority ranking. **Sequencing is about dependencies, not value.**
 2. **`dns_records` parsed at the boundary** into a named `DNSRecords{DKIM, SPF,
    DMARC}` struct — never indexed positionally. Unrecognized records are
    surfaced (warn + expose), never silently dropped.
-3. **Batch recipient cap (50) validated client-side.** >50 rejected locally with
-   a clear error; `--auto-chunk` splits into ≤50 sequential calls with
-   stop-on-first-failure reporting (`sent X/Y across K chunks · chunk N failed ·
-   chunks N+1..K not attempted`), documented in Phase 3's definition of done.
+3. **Batch sends delegated to the server batch endpoint.** `send batch` posts
+   to `/api/outbound/emails/batch`; the server splits into ≤50-recipient chunks,
+   filters suppressed addresses, and continues on failure — reporting a
+   `sent N / failed M` summary via `BatchResult`. The single-send cap (50) is
+   still validated client-side with a pointer to `send batch`.
+- **Sending-domain authoritative records surfaced.** `domain list`/`verify`
+  now render the API-returned `spf_*`/`dmarc_*` fields alongside DKIM, so the
+  CLI never guesses what DNS to publish.
+- **Inbound message fields aligned to the wire.** `InboundMessage` now maps
+  `from_addr`/`to_addr`/`received_at` (and pointer bodies) exactly as the API
+  returns them.

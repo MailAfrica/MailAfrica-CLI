@@ -63,6 +63,7 @@ func newDomainAddCmd() *cobra.Command {
 			fmt.Fprintln(cmd.OutOrStdout(), "Publish these DNS records, then run:")
 			fmt.Fprintln(cmd.OutOrStdout(), "  mailafrica domain verify "+fmt.Sprintf("%d", d.ID))
 			records := api.ParseDNSRecords(resp.DNSRecords)
+			applyDomainRecords(&records, &d)
 			printDNSRecords(cmd, &records)
 			return nil
 		},
@@ -97,11 +98,13 @@ func newDomainListCmd() *cobra.Command {
 					output.Empty(d.Domain),
 					d.Status,
 					output.Empty(d.FromLocalPart),
+					output.EmptyPtr(d.SpfHost),
+					output.EmptyPtr(d.DmarcHost),
 					fmtTimePtr(d.VerifiedAt, "-"),
 					fmtTime(d.CreatedAt),
 				})
 			}
-			output.Table(cmd.OutOrStdout(), []string{"ID", "Domain", "Status", "From", "Verified", "Added"}, rows)
+			output.Table(cmd.OutOrStdout(), []string{"ID", "Domain", "Status", "From", "SPF host", "DMARC host", "Verified", "Added"}, rows)
 			return nil
 		},
 	}
@@ -129,8 +132,20 @@ func newDomainVerifyCmd() *cobra.Command {
 			switch d.Status {
 			case "verified":
 				fmt.Fprintln(cmd.OutOrStdout(), "DKIM / SPF / DMARC confirmed — this domain is ready to send")
+				fmt.Fprintln(cmd.OutOrStdout(), "")
+				fmt.Fprintln(cmd.OutOrStdout(), "Authoritative DNS records for this domain:")
+				recs := api.DNSRecords{}
+				applyDomainRecords(&recs, &d)
+				printDNSRecords(cmd, &recs)
 			default:
 				fmt.Fprintln(cmd.OutOrStdout(), "not all DNS records are published yet — check the TXT/MX records at your DNS provider and retry")
+				if hasAnyRecord(&d) {
+					fmt.Fprintln(cmd.OutOrStdout(), "")
+					fmt.Fprintln(cmd.OutOrStdout(), "Authoritative DNS records to publish:")
+					recs := api.DNSRecords{}
+					applyDomainRecords(&recs, &d)
+					printDNSRecords(cmd, &recs)
+				}
 			}
 			return nil
 		},
@@ -266,4 +281,28 @@ func printDNSRecords(cmd *cobra.Command, recs *api.DNSRecords) {
 	for _, u := range recs.Unrecognized {
 		fmt.Fprintf(cmd.OutOrStdout(), "unknown record type %q on host %q — publish this manually: %s\n", u.Type, u.Host, strings.TrimSpace(u.Value))
 	}
+}
+
+// applyDomainRecords fills any empty DKIM/SPF/DMARC slots in recs from the
+// authoritative fields the API now returns on the sending-domain payload
+// (spf_*/dmarc_* alongside dkim_*). The dns_records array may omit SPF/DMARC
+// on some responses, so this guarantees the full set is displayed.
+func applyDomainRecords(recs *api.DNSRecords, d *api.SendingDomain) {
+	if recs.DKIM.Host == "" && d.DkimHost != nil {
+		recs.DKIM = api.DNSRecord{Type: "TXT", Host: *d.DkimHost, Value: *d.DkimValue}
+	}
+	if recs.SPF.Host == "" && d.SpfHost != nil {
+		recs.SPF = api.DNSRecord{Type: "TXT", Host: *d.SpfHost, Value: *d.SpfValue}
+	}
+	if recs.DMARC.Host == "" && d.DmarcHost != nil {
+		recs.DMARC = api.DNSRecord{Type: "TXT", Host: *d.DmarcHost, Value: *d.DmarcValue}
+	}
+}
+
+// hasAnyRecord reports whether a sending domain carries any authoritative
+// DKIM/SPF/DMARC record to display.
+func hasAnyRecord(d *api.SendingDomain) bool {
+	return (d.DkimHost != nil && *d.DkimHost != "") ||
+		(d.SpfHost != nil && *d.SpfHost != "") ||
+		(d.DmarcHost != nil && *d.DmarcHost != "")
 }

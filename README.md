@@ -51,7 +51,7 @@ mailafrica inbound message list --address-id 1
 mailafrica domain add --domain mail.example.com          # publish DKIM/SPF/DMARC
 mailafrica domain verify 1
 mailafrica send email --to you@corp.com --subject "Hi" --text-body "hello"
-mailafrica send batch --to-file recipients.txt --subject "Bulk" --auto-chunk
+mailafrica send batch --to-file recipients.txt --subject "Bulk"
 mailafrica send template create --name Welcome --subject "Hi {{name}}" --html-file welcome.html
 
 # sandbox: test SMTP flows without paying
@@ -90,7 +90,7 @@ mailafrica
 ├── domain       Verified sending domains: DKIM/SPF/DMARC records + identities
 ├── inbound      Receiving addresses, domains, mail
 ├── sandbox      Test flows with a sandbox SMTP server
-├── send         Send email, batch (chunked ≤50/call), templates
+├── send         Send email, batch (server-side ≤50/call chunking), templates
 ├── sms          Short SMS when mail hits an inbound address
 ├── version      Print the version
 ├── wallet         Balance and top-ups (min 2000 TZS)
@@ -107,4 +107,4 @@ make test
 ```
 
 Tests spin up ephemeral fake servers (with `-race` clean) covering the e2e
-command paths incl. the batch chunk contract and one-time-secret handling.
+command paths incl. the batch summary contract and one-time-secret handling.
