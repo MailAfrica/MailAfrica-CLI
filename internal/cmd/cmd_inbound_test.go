@@ -40,7 +40,7 @@ func newInboundTestServer(t *testing.T) (*httptest.Server, *bool) {
 
 		parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
 		switch {
-		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/inbound/addresses/"):
+		case r.Method == http.MethodPost && r.URL.Path == "/api/inbound/addresses":
 			var body api.CreateInboundAddressRequest
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			addrID++
@@ -49,7 +49,7 @@ func newInboundTestServer(t *testing.T) (*httptest.Server, *bool) {
 				"retention_days": 30, "created_at": "2026-01-01T00:00:00Z",
 			}, nil)
 
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/inbound/addresses/") && len(parts) == 3:
+		case r.Method == http.MethodGet && r.URL.Path == "/api/inbound/addresses":
 			writeEnv(w, http.StatusOK, true, []map[string]any{{
 				"id": addrID, "user_id": 1, "local_part": "invoices",
 				"retention_days": 30, "created_at": "2026-01-01T00:00:00Z",
@@ -58,7 +58,7 @@ func newInboundTestServer(t *testing.T) (*httptest.Server, *bool) {
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/inbound/addresses/"):
 			writeEnv(w, http.StatusOK, true, nil, nil)
 
-		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/inbound/domains/") && len(parts) == 3:
+		case r.Method == http.MethodPost && r.URL.Path == "/api/inbound/domains":
 			var body api.CreateInboundDomainRequest
 			_ = json.NewDecoder(r.Body).Decode(&body)
 			writeEnv(w, http.StatusCreated, true, map[string]any{
@@ -66,7 +66,7 @@ func newInboundTestServer(t *testing.T) (*httptest.Server, *bool) {
 				"verification_record": map[string]any{"type": "TXT", "host": "_mailafrica." + body.Domain, "value": "token-xyz"},
 			}, nil)
 
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/inbound/domains/") && len(parts) == 3:
+		case r.Method == http.MethodGet && r.URL.Path == "/api/inbound/domains":
 			state := map[string]any{"id": domainID, "user_id": 1, "domain": "in.example.com", "created_at": "2026-01-01T00:00:00Z"}
 			if verified {
 				state["verified_at"] = "2026-01-02T00:00:00Z"
@@ -83,14 +83,14 @@ func newInboundTestServer(t *testing.T) (*httptest.Server, *bool) {
 		case r.Method == http.MethodDelete && strings.HasPrefix(r.URL.Path, "/api/inbound/domains/"):
 			writeEnv(w, http.StatusOK, true, nil, nil)
 
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/inbound/messages/") && len(parts) == 3:
+		case r.Method == http.MethodGet && r.URL.Path == "/api/inbound/messages":
 			msgs := []map[string]any{
 				{"id": 11, "address_id": 7, "from_addr": "alice@corp.com", "to_addr": "invoices@mailafrica.online", "subject": "Invoice", "is_read": false, "received_at": "2026-01-02T00:00:00Z"},
 				{"id": 10, "address_id": 7, "from_addr": "bob@corp.com", "to_addr": "invoices@mailafrica.online", "subject": "Receipt", "is_read": true, "received_at": "2026-01-01T00:00:00Z"},
 			}
 			writeEnv(w, http.StatusOK, true, msgs, &map[string]int{"page": 1, "per_page": 2, "total": 2, "total_pages": 1})
 
-		case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/inbound/messages/") && strings.HasSuffix(r.URL.Path, "/read"):
+		case strings.HasPrefix(r.URL.Path, "/api/inbound/messages/") && strings.HasSuffix(r.URL.Path, "/read"):
 			writeEnv(w, http.StatusOK, true, nil, nil)
 
 		case r.Method == http.MethodPatch && strings.HasPrefix(r.URL.Path, "/api/inbound/messages/"):

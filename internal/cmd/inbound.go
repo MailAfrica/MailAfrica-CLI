@@ -68,7 +68,7 @@ func newInboundAddressCreateCmd() *cobra.Command {
 			}
 
 			var addr api.InboundAddress
-			if err := e.client.Do(cmd.Context(), "POST", "/api/inbound/addresses/", req, &addr); err != nil {
+			if err := e.client.Do(cmd.Context(), "POST", "/api/inbound/addresses", req, &addr); err != nil {
 				return err
 			}
 			if e.jsonOut {
@@ -94,7 +94,7 @@ func newInboundAddressListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e := envFrom(cmd)
 			var addrs []*api.InboundAddress
-			if err := e.client.Do(cmd.Context(), "GET", "/api/inbound/addresses/", nil, &addrs); err != nil {
+			if err := e.client.Do(cmd.Context(), "GET", "/api/inbound/addresses", nil, &addrs); err != nil {
 				return err
 			}
 			if e.jsonOut {
@@ -172,7 +172,7 @@ func newInboundDomainAddCmd() *cobra.Command {
 				return errors.New("--domain is required")
 			}
 			var resp api.CreateInboundDomainResponse
-			if err := e.client.Do(cmd.Context(), "POST", "/api/inbound/domains/", api.CreateInboundDomainRequest{Domain: domain}, &resp); err != nil {
+			if err := e.client.Do(cmd.Context(), "POST", "/api/inbound/domains", api.CreateInboundDomainRequest{Domain: domain}, &resp); err != nil {
 				return err
 			}
 			if e.jsonOut {
@@ -209,7 +209,7 @@ func newInboundDomainListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e := envFrom(cmd)
 			var domains []*api.InboundDomain
-			if err := e.client.Do(cmd.Context(), "GET", "/api/inbound/domains/", nil, &domains); err != nil {
+			if err := e.client.Do(cmd.Context(), "GET", "/api/inbound/domains", nil, &domains); err != nil {
 				return err
 			}
 			if e.jsonOut {
@@ -312,7 +312,7 @@ func newInboundMessageListCmd() *cobra.Command {
 				return errors.New("--address-id must be an integer")
 			}
 
-			path := fmt.Sprintf("/api/inbound/messages/?address_id=%d", addressID)
+			path := fmt.Sprintf("/api/inbound/messages?address_id=%d", addressID)
 			if unread, _ := cmd.Flags().GetBool("unread"); unread {
 				path += "&unread=true"
 			}
